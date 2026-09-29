@@ -31,7 +31,7 @@ createContentGenerator(authType = 'ollama')
 | `GEMINI_OLLAMA_KEEP_ALIVE` | (Ollama 기본) | 요청의 `keep_alive`(예: `30m`) |
 | `GEMINI_OLLAMA_TIMEOUT_SECONDS` | 600 | 요청 하나의 최대 시간(첫 모델 적재 포함) |
 
-- **접두어 `GEMINI_OLLAMA_`를 붙이는 이유**: `OLLAMA_HOST`, `OLLAMA_KEEP_ALIVE`, `OLLAMA_CONTEXT_LENGTH` 등은 **Ollama 서버가 읽는 환경변수**다.
+- **접두어 `GEMINI_OLLAMA_`로 확정(2026-09-30 오케스트레이터 결정).** 이유: `OLLAMA_HOST`, `OLLAMA_KEEP_ALIVE`, `OLLAMA_CONTEXT_LENGTH` 등은 **Ollama 서버가 읽는 환경변수**다.
   CLI와 `ollama serve`가 같은 서버·같은 셸 프로파일에 있으면 이름이 겹쳐 서로 영향을 준다.
 - **num_ctx는 SQL 튜닝 REST API와 같은 값(32768)으로 맞춘다.** Ollama는 같은 모델이라도 `num_ctx`가 다른 요청이 오면
   모델을 **다시 적재**한다. 두 클라이언트가 값이 다르면 번갈아 호출될 때마다 30B 모델을 다시 올리게 된다.
