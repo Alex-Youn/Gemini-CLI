@@ -1,0 +1,20 @@
+#!/bin/sh
+# (2026-09 폐쇄망 포크) gemini-cli-ollama 실행기
+# 패키지에 든 Node 런타임으로 번들(bundle/gemini.js)을 실행한다. 시스템 Node는 쓰지 않는다.
+set -e
+
+SELF=$(readlink -f "$0")
+PKG_DIR=$(cd "$(dirname "$SELF")/.." && pwd)
+NODE="$PKG_DIR/runtime/node/bin/node"
+
+if [ ! -x "$NODE" ]; then
+  echo "Node 런타임이 없습니다. 먼저 설치하세요: sh $PKG_DIR/install.sh" >&2
+  exit 1
+fi
+
+# GEMINI_OLLAMA_* 기본값 (셸에 이미 있는 값이 우선)
+if [ -f "$PKG_DIR/config/gemini.env" ]; then
+  . "$PKG_DIR/config/gemini.env"
+fi
+
+exec "$NODE" "$PKG_DIR/bundle/gemini.js" "$@"

@@ -160,6 +160,24 @@
 
 **검증:** 인터넷 없는 컨테이너에서 압축 풀고 1·2단계 검증 항목 재실행.
 
+**진행 상황 (2026-09-30):** 완료. 절차서
+`작업정리/폐쇄망_반입설치절차_2026-09-30.md`.
+
+- 만들기: `scripts/ollama-offline/package.sh` →
+  `dist-offline/gemini-cli-ollama-<버전>-<커밋>-linux-x64.tar.gz`(약 69MB,
+  `.gitignore`에 추가). `npm run bundle` 번들 + 공식 Node v24.19.0
+  linux-x64(SHA256 확인, 대상에 xz가 없어 gzip으로 변환) + `rg-linux-x64`(번들
+  복사 스크립트가 빠뜨려 따로 넣음) + 실행기·설치 스크립트·설정 샘플
+- 검증: `scripts/ollama-offline/verify-docker.sh` - Docker `--internal`
+  망(인터넷 차단)의 Rocky 9.3 컨테이너에서 설치·실행
+  - [x] 인터넷 차단 확인, 시스템 Node 없이 설치·실행
+  - [x] 텍스트 대화, 도구 호출(읽기 → 셸 → 수정), `grep_search`(ripgrep), 연결
+        실패 즉시 안내
+  - [ ] 실제 폐쇄망 GPU 서버에서 절차서 6절 재실행
+- 발견: 127.0.0.1에만 열린 Ollama는 다른 호스트 이름(`Host: ollama`)으로 온
+  요청을 403으로 막는다. 검증용 중계는 Host 헤더를 바꿔 해결했고, 다른 서버에서
+  CLI를 쓸 때는 `OLLAMA_HOST=0.0.0.0`이 필요하다고 절차서에 적음
+
 ## 선택 (필요할 때만)
 
 | 파일                                   | 내용                                                                                         |

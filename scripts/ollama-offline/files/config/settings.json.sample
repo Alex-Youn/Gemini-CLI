@@ -1,0 +1,13 @@
+{
+  "security": { "auth": { "selectedType": "ollama" } },
+  "general": {
+    "enableAutoUpdate": false,
+    "enableAutoUpdateNotification": false
+  },
+  "privacy": { "usageStatisticsEnabled": false },
+  "model": { "compressionThreshold": 0.7 },
+  "tools": {
+    "exclude": ["google_web_search", "web_fetch"],
+    "truncateToolOutputThreshold": 16000
+  }
+}

@@ -68,3 +68,7 @@ temp_agents/
 
 # conductor extension and planning directories
 conductor/
+
+# (2026-09 폐쇄망 포크) 폐쇄망 반입 패키지 결과물
+dist-offline/
+dist-offline.bundle.log
