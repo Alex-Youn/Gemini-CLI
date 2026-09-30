@@ -8,6 +8,7 @@
 
 import {
   FinishReason,
+  FunctionCallingConfigMode,
   GenerateContentResponse,
   type Candidate,
   type Content,
@@ -28,10 +29,26 @@ import type { OllamaConfig } from './ollamaConfig.js';
 import { LlmRole } from '../telemetry/llmRole.js';
 import { estimateTokenCountSync } from '../utils/tokenCalculation.js';
 import { debugLogger } from '../utils/debugLogger.js';
+import {
+  TextToolCallExtractor,
+  collectParameterSchemas,
+} from './ollamaTextToolCalls.js';
 
-interface OllamaMessage {
+interface OllamaToolCall {
+  id?: string;
+  function: { name: string; arguments: Record<string, unknown> };
+}
+
+export interface OllamaMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  tool_calls?: OllamaToolCall[];
+  tool_name?: string;
+}
+
+export interface OllamaTool {
+  type: 'function';
+  function: { name: string; description?: string; parameters: unknown };
 }
 
 export interface OllamaChatRequest {
@@ -39,13 +56,22 @@ export interface OllamaChatRequest {
   messages: OllamaMessage[];
   stream: true;
   options: Record<string, unknown>;
+  tools?: OllamaTool[];
   format?: unknown;
   keep_alive?: string;
 }
 
 interface OllamaChatChunk {
   model?: string;
-  message?: { role?: string; content?: string; thinking?: string };
+  message?: {
+    role?: string;
+    content?: string;
+    thinking?: string;
+    tool_calls?: Array<{
+      id?: string;
+      function?: { name?: string; arguments?: unknown };
+    }>;
+  };
   done?: boolean;
   done_reason?: string;
   prompt_eval_count?: number;
@@ -133,8 +159,29 @@ function partToText(part: Part): string | undefined {
   if (part.inlineData || part.fileData) {
     return `[첨부 생략: ${mimeType ?? 'unknown'}]`;
   }
-  // functionCall·functionResponse 변환은 2단계(도구 호출)에서 추가한다.
+  // functionCall·functionResponse는 toOllamaMessages가 따로 처리한다.
   return undefined;
+}
+
+/**
+ * 도구 결과를 tool 메시지 본문으로 바꾼다. CLI 도구 결과는 대부분 `{output}`·`{error}` 하나라서
+ * 그 문자열을 그대로 넣는다(JSON으로 감싸면 줄바꿈·따옴표가 이스케이프돼 토큰이 늘고 읽기 어렵다).
+ */
+function functionResponseToText(response: unknown): string {
+  if (typeof response !== 'object' || response === null) {
+    return String(response ?? '');
+  }
+  const keys = Object.keys(response);
+  if (keys.length === 1 && 'output' in response) {
+    return typeof response.output === 'string'
+      ? response.output
+      : JSON.stringify(response.output);
+  }
+  if (keys.length === 1 && 'error' in response) {
+    const error = response.error;
+    return `Error: ${typeof error === 'string' ? error : JSON.stringify(error)}`;
+  }
+  return JSON.stringify(response);
 }
 
 function systemInstructionToText(
@@ -169,19 +216,89 @@ export function toOllamaMessages(
     messages.push({ role: 'system', content: system });
   }
   for (const content of toContents(contents)) {
-    const text = (content.parts ?? [])
+    const parts = content.parts ?? [];
+    const text = parts
       .map(partToText)
       .filter((t): t is string => !!t)
       .join('\n');
-    if (!text) {
+
+    if (content.role === 'model') {
+      // 텍스트와 도구 호출(병렬 포함, 순서 유지)을 assistant 메시지 하나로 묶는다.
+      const toolCalls: OllamaToolCall[] = parts
+        .filter((p) => p.functionCall?.name)
+        .map((p) => ({
+          ...(p.functionCall?.id && { id: p.functionCall.id }),
+          function: {
+            name: p.functionCall?.name ?? '',
+            arguments: p.functionCall?.args ?? {},
+          },
+        }));
+      if (text || toolCalls.length > 0) {
+        messages.push({
+          role: 'assistant',
+          content: text,
+          ...(toolCalls.length > 0 && { tool_calls: toolCalls }),
+        });
+      }
       continue;
     }
-    messages.push({
-      role: content.role === 'model' ? 'assistant' : 'user',
-      content: text,
-    });
+
+    // 도구 결과는 같은 Content의 텍스트보다 먼저 - 직전 assistant의 tool_calls 바로 뒤에 와야 한다.
+    for (const part of parts) {
+      if (part.functionResponse) {
+        messages.push({
+          role: 'tool',
+          tool_name: part.functionResponse.name ?? '',
+          content: functionResponseToText(part.functionResponse.response),
+        });
+      }
+    }
+    if (text) {
+      messages.push({ role: 'user', content: text });
+    }
   }
   return messages;
+}
+
+/** 함수 선언만 Ollama `tools`로 옮긴다. 검색·URL 컨텍스트 같은 Gemini 전용 도구는 뺀다. */
+export function toOllamaTools(
+  config: GenerateContentConfig | undefined,
+): OllamaTool[] | undefined {
+  if (
+    config?.toolConfig?.functionCallingConfig?.mode ===
+    FunctionCallingConfigMode.NONE
+  ) {
+    return undefined;
+  }
+  const tools: OllamaTool[] = [];
+  for (const tool of config?.tools ?? []) {
+    if (typeof tool !== 'object' || tool === null) {
+      continue;
+    }
+    if (!('functionDeclarations' in tool) || !tool.functionDeclarations) {
+      debugLogger.debug(
+        `[Ollama] 함수 선언이 아닌 도구 제외: ${Object.keys(tool).join(',')}`,
+      );
+      continue;
+    }
+    for (const decl of tool.functionDeclarations) {
+      if (!decl.name) {
+        continue;
+      }
+      tools.push({
+        type: 'function',
+        function: {
+          name: decl.name,
+          ...(decl.description && { description: decl.description }),
+          parameters: toJsonSchema(
+            decl.parametersJsonSchema ??
+              decl.parameters ?? { type: 'object', properties: {} },
+          ),
+        },
+      });
+    }
+  }
+  return tools.length > 0 ? tools : undefined;
 }
 
 function toOllamaOptions(
@@ -333,10 +450,28 @@ function makeResponse(
   throw new Error('Failed to create GenerateContentResponse');
 }
 
-/** 조각 하나를 응답으로 바꾼다. 보여 줄 내용도 끝 신호도 없으면 undefined. */
+function toArgs(value: unknown): Record<string, unknown> {
+  if (typeof value === 'string') {
+    // Ollama는 객체로 주지만(실측), 문자열로 오는 경우도 받아 준다.
+    try {
+      return toArgs(JSON.parse(value));
+    } catch {
+      return {};
+    }
+  }
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value))
+    : {};
+}
+
+/**
+ * 조각 하나를 응답으로 바꾼다. 보여 줄 내용도 끝 신호도 없으면 undefined.
+ * `nextCallId`: Ollama가 도구 호출 id를 주지 않을 때 쓸 id를 만든다.
+ */
 export function toGenerateContentResponse(
   chunk: OllamaChatChunk,
   model: string,
+  nextCallId: () => string = () => `ollama-${Date.now()}`,
 ): GenerateContentResponse | undefined {
   const parts: Part[] = [];
   if (chunk.message?.thinking) {
@@ -344,6 +479,18 @@ export function toGenerateContentResponse(
   }
   if (chunk.message?.content) {
     parts.push({ text: chunk.message.content });
+  }
+  for (const call of chunk.message?.tool_calls ?? []) {
+    if (!call.function?.name) {
+      continue;
+    }
+    parts.push({
+      functionCall: {
+        id: call.id || nextCallId(),
+        name: call.function.name,
+        args: toArgs(call.function.arguments),
+      },
+    });
   }
   if (!chunk.done && parts.length === 0) {
     return undefined;
@@ -433,6 +580,7 @@ export class OllamaContentGenerator implements ContentGenerator {
    * 헤더 대기(= 첫 조각까지, 0.35.0 실측)와 조각 사이 공백을 같은 값으로 제한한다.
    */
   private readonly dispatcher: undici.Dispatcher;
+  private requestCounter = 0;
 
   constructor(
     private readonly config: OllamaConfig,
@@ -463,6 +611,10 @@ export class OllamaContentGenerator implements ContentGenerator {
       stream: true,
       options: toOllamaOptions(request.config, this.config.numCtx),
     };
+    const tools = toOllamaTools(request.config);
+    if (tools) {
+      body.tools = tools;
+    }
     const format = toOllamaFormat(request.config);
     if (format !== undefined) {
       body.format = format;
@@ -524,11 +676,45 @@ export class OllamaContentGenerator implements ContentGenerator {
     if (!response.body) {
       throw new Error('Ollama 응답 본문이 비어 있습니다');
     }
+    const requestNo = ++this.requestCounter;
+    let callNo = 0;
+    const nextCallId = () => `ollama-${requestNo}-${++callNo}`;
+    // 도구를 보낸 요청만 본문 속 도구 호출을 복구한다(설계문서 6절 보조 파서).
+    const extractor = body.tools
+      ? new TextToolCallExtractor(collectParameterSchemas(body.tools))
+      : undefined;
     for await (const chunk of readNdjson(response.body)) {
       if (chunk.error) {
         throw new Error(`Ollama 오류: ${chunk.error}`);
       }
-      const converted = toGenerateContentResponse(chunk, body.model);
+      if (extractor && chunk.message?.content) {
+        chunk.message.content = extractor.push(chunk.message.content);
+      }
+      if (extractor && chunk.done) {
+        const recovered = extractor.finish();
+        if (recovered.calls.length > 0) {
+          debugLogger.debug(
+            `[Ollama] 본문 텍스트 도구 호출 ${recovered.calls.length}개 복구: ${recovered.calls.map((c) => c.name).join(', ')}`,
+          );
+        }
+        const parts: Part[] = [
+          ...(recovered.text ? [{ text: recovered.text }] : []),
+          ...recovered.calls.map((call) => ({
+            functionCall: { id: nextCallId(), ...call },
+          })),
+        ];
+        if (parts.length > 0) {
+          yield makeResponse(
+            { index: 0, content: { role: 'model', parts } },
+            chunk.model ?? body.model,
+          );
+        }
+      }
+      const converted = toGenerateContentResponse(
+        chunk,
+        body.model,
+        nextCallId,
+      );
       if (converted) {
         yield converted;
       }

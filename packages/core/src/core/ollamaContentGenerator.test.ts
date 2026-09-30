@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   FinishReason,
+  FunctionCallingConfigMode,
   GenerateContentResponse,
   Type,
   type GenerateContentParameters,
@@ -15,6 +16,8 @@ import {
   OllamaApiError,
   OllamaContentGenerator,
   toJsonSchema,
+  toOllamaMessages,
+  toOllamaTools,
   type OllamaFetch,
   type OllamaHttpResponse,
 } from './ollamaContentGenerator.js';
@@ -705,5 +708,490 @@ describe('toJsonSchema', () => {
     ).toEqual({
       description: 'x',
     });
+  });
+});
+
+describe('tool calling (2단계)', () => {
+  const WEATHER_DECL = {
+    name: 'get_weather',
+    description: 'Get current weather of a city',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: { city: { type: 'string' } },
+      required: ['city'],
+    },
+  };
+
+  describe('toOllamaTools', () => {
+    it('converts function declarations and keeps JSON Schema parameters', () => {
+      expect(
+        toOllamaTools({ tools: [{ functionDeclarations: [WEATHER_DECL] }] }),
+      ).toEqual([
+        {
+          type: 'function',
+          function: {
+            name: 'get_weather',
+            description: 'Get current weather of a city',
+            parameters: WEATHER_DECL.parametersJsonSchema,
+          },
+        },
+      ]);
+    });
+
+    it('converts Gemini Schema parameters', () => {
+      const [tool] =
+        toOllamaTools({
+          tools: [
+            {
+              functionDeclarations: [
+                {
+                  name: 'list',
+                  parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                      limit: { type: Type.INTEGER, nullable: true },
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        }) ?? [];
+      expect(tool.function.parameters).toEqual({
+        type: 'object',
+        properties: { limit: { type: ['integer', 'null'] } },
+      });
+      expect(tool.function.description).toBeUndefined();
+    });
+
+    it('gives an empty object schema when there are no parameters', () => {
+      const [tool] =
+        toOllamaTools({
+          tools: [{ functionDeclarations: [{ name: 'now' }] }],
+        }) ?? [];
+      expect(tool.function.parameters).toEqual({
+        type: 'object',
+        properties: {},
+      });
+    });
+
+    it('drops non-function tools (googleSearch, urlContext)', () => {
+      expect(
+        toOllamaTools({
+          tools: [
+            { googleSearch: {} },
+            { urlContext: {} },
+            { functionDeclarations: [WEATHER_DECL] },
+          ],
+        })?.map((t) => t.function.name),
+      ).toEqual(['get_weather']);
+      expect(toOllamaTools({ tools: [{ googleSearch: {} }] })).toBeUndefined();
+      expect(toOllamaTools({})).toBeUndefined();
+    });
+
+    it('sends no tools when function calling mode is NONE', () => {
+      expect(
+        toOllamaTools({
+          tools: [{ functionDeclarations: [WEATHER_DECL] }],
+          toolConfig: {
+            functionCallingConfig: { mode: FunctionCallingConfigMode.NONE },
+          },
+        }),
+      ).toBeUndefined();
+    });
+
+    it('is wired into buildChatRequest', () => {
+      const generator = new OllamaContentGenerator(CONFIG, vi.fn());
+      const body = generator.buildChatRequest(
+        {
+          ...REQUEST,
+          config: { tools: [{ functionDeclarations: [WEATHER_DECL] }] },
+        },
+        LlmRole.MAIN,
+      );
+      expect(body.tools?.[0].function.name).toBe('get_weather');
+      expect(
+        generator.buildChatRequest(REQUEST, LlmRole.MAIN).tools,
+      ).toBeUndefined();
+    });
+  });
+
+  describe('history conversion', () => {
+    it('maps parallel function calls and their responses in order', () => {
+      const messages = toOllamaMessages([
+        { role: 'user', parts: [{ text: 'weather in Seoul and Busan?' }] },
+        {
+          role: 'model',
+          parts: [
+            { text: 'checking', thought: true },
+            { text: 'Let me check.' },
+            {
+              functionCall: {
+                id: 'call_1',
+                name: 'get_weather',
+                args: { city: 'Seoul' },
+              },
+              thoughtSignature: 'sig',
+            },
+            {
+              functionCall: {
+                id: 'call_2',
+                name: 'get_weather',
+                args: { city: 'Busan' },
+              },
+            },
+          ],
+        },
+        {
+          role: 'user',
+          parts: [
+            {
+              functionResponse: {
+                id: 'call_1',
+                name: 'get_weather',
+                response: { output: 'clear, 21C' },
+              },
+            },
+            {
+              functionResponse: {
+                id: 'call_2',
+                name: 'get_weather',
+                response: { error: 'timeout' },
+              },
+            },
+            { text: 'answer briefly' },
+          ],
+        },
+        { role: 'model', parts: [{ text: 'Seoul is clear.' }] },
+      ]);
+      expect(messages).toEqual([
+        { role: 'user', content: 'weather in Seoul and Busan?' },
+        {
+          role: 'assistant',
+          content: 'Let me check.',
+          tool_calls: [
+            {
+              id: 'call_1',
+              function: { name: 'get_weather', arguments: { city: 'Seoul' } },
+            },
+            {
+              id: 'call_2',
+              function: { name: 'get_weather', arguments: { city: 'Busan' } },
+            },
+          ],
+        },
+        { role: 'tool', tool_name: 'get_weather', content: 'clear, 21C' },
+        { role: 'tool', tool_name: 'get_weather', content: 'Error: timeout' },
+        { role: 'user', content: 'answer briefly' },
+        { role: 'assistant', content: 'Seoul is clear.' },
+      ]);
+    });
+
+    it('keeps an assistant message that has only tool calls', () => {
+      const messages = toOllamaMessages([
+        { role: 'model', parts: [{ functionCall: { name: 'now', args: {} } }] },
+      ]);
+      expect(messages).toEqual([
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [{ function: { name: 'now', arguments: {} } }],
+        },
+      ]);
+    });
+
+    it('serializes structured tool results as JSON', () => {
+      const [message] = toOllamaMessages([
+        {
+          role: 'user',
+          parts: [
+            {
+              functionResponse: {
+                name: 'stat',
+                response: { size: 10, isDirectory: false },
+              },
+            },
+          ],
+        },
+      ]);
+      expect(message).toEqual({
+        role: 'tool',
+        tool_name: 'stat',
+        content: '{"size":10,"isDirectory":false}',
+      });
+      const [nonString] = toOllamaMessages([
+        {
+          role: 'user',
+          parts: [
+            {
+              functionResponse: {
+                name: 'ls',
+                response: { output: ['a', 'b'] },
+              },
+            },
+          ],
+        },
+      ]);
+      expect(nonString.content).toBe('["a","b"]');
+    });
+  });
+
+  describe('response conversion', () => {
+    it('turns tool_calls into functionCall parts with the Ollama id (0.35.0 실측 형식)', async () => {
+      const { generator } = setup(
+        streamResponse([
+          ndjson(
+            {
+              model: 'main-model',
+              message: {
+                role: 'assistant',
+                content: '',
+                tool_calls: [
+                  {
+                    id: 'call_99y0bdr2',
+                    function: {
+                      index: 0,
+                      name: 'get_weather',
+                      arguments: { city: 'Seoul' },
+                    },
+                  },
+                ],
+              },
+              done: false,
+            },
+            DONE,
+          ),
+        ]),
+      );
+      const chunks = await collect(
+        await generator.generateContentStream(REQUEST, 'p1', LlmRole.MAIN),
+      );
+      expect(chunks[0].functionCalls).toEqual([
+        { id: 'call_99y0bdr2', name: 'get_weather', args: { city: 'Seoul' } },
+      ]);
+      expect(chunks[1].candidates?.[0].finishReason).toBe(FinishReason.STOP);
+    });
+
+    it('generates ids when Ollama gives none and parses string arguments', async () => {
+      const { generator } = setup(
+        streamResponse([
+          ndjson(
+            {
+              message: {
+                content: '',
+                tool_calls: [
+                  { function: { name: 'a', arguments: '{"x":1}' } },
+                  { function: { name: 'b', arguments: 'not json' } },
+                  { function: { arguments: {} } },
+                ],
+              },
+              done: false,
+            },
+            DONE,
+          ),
+        ]),
+      );
+      const [first] = await collect(
+        await generator.generateContentStream(REQUEST, 'p1', LlmRole.MAIN),
+      );
+      expect(first.functionCalls).toEqual([
+        { id: 'ollama-1-1', name: 'a', args: { x: 1 } },
+        { id: 'ollama-1-2', name: 'b', args: {} },
+      ]);
+    });
+
+    it('generateContent keeps text and function calls', async () => {
+      const { generator } = setup(
+        streamResponse([
+          ndjson(
+            textChunk('Let me check. '),
+            {
+              message: {
+                content: '',
+                tool_calls: [
+                  { id: 'c1', function: { name: 'now', arguments: {} } },
+                ],
+              },
+              done: false,
+            },
+            DONE,
+          ),
+        ]),
+      );
+      const response = await generator.generateContent(
+        REQUEST,
+        'p1',
+        LlmRole.MAIN,
+      );
+      expect(response.candidates?.[0].content?.parts).toEqual([
+        { text: 'Let me check. ' },
+        { functionCall: { id: 'c1', name: 'now', args: {} } },
+      ]);
+    });
+  });
+
+  describe('text tool call recovery (보조 파서)', () => {
+    // 2026-09-30 CLI 실측 실패 본문을 토큰처럼 쪼갠 스트림
+    const FAILURE_PIECES = [
+      '<function=read',
+      '_file>\n<parameter=file_path>\n',
+      'notes.txt\n</parameter>\n',
+      '</function>\n</tool_call>',
+    ];
+    const WITH_TOOLS: GenerateContentParameters = {
+      ...REQUEST,
+      config: {
+        tools: [
+          {
+            functionDeclarations: [
+              {
+                ...WEATHER_DECL,
+                name: 'read_file',
+                parametersJsonSchema: {
+                  type: 'object',
+                  properties: { file_path: { type: 'string' } },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    it('turns tool-call text into a functionCall without leaking the text', async () => {
+      const { generator } = setup(
+        streamResponse([ndjson(...FAILURE_PIECES.map(textChunk), DONE)]),
+      );
+      const chunks = await collect(
+        await generator.generateContentStream(WITH_TOOLS, 'p1', LlmRole.MAIN),
+      );
+      expect(chunks.map((c) => c.text ?? '').join('')).toBe('');
+      expect(chunks.flatMap((c) => c.functionCalls ?? [])).toEqual([
+        {
+          id: 'ollama-1-1',
+          name: 'read_file',
+          args: { file_path: 'notes.txt' },
+        },
+      ]);
+      expect(chunks.at(-1)?.candidates?.[0].finishReason).toBe(
+        FinishReason.STOP,
+      );
+    });
+
+    it('generateContent also gets the recovered call', async () => {
+      const { generator } = setup(
+        streamResponse([
+          ndjson(
+            textChunk('Reading. '),
+            ...FAILURE_PIECES.map(textChunk),
+            DONE,
+          ),
+        ]),
+      );
+      const response = await generator.generateContent(
+        WITH_TOOLS,
+        'p1',
+        LlmRole.MAIN,
+      );
+      expect(response.candidates?.[0].content?.parts).toEqual([
+        { text: 'Reading. ' },
+        {
+          functionCall: {
+            id: 'ollama-1-1',
+            name: 'read_file',
+            args: { file_path: 'notes.txt' },
+          },
+        },
+      ]);
+    });
+
+    it('does nothing when the request had no tools', async () => {
+      const { generator } = setup(
+        streamResponse([ndjson(...FAILURE_PIECES.map(textChunk), DONE)]),
+      );
+      const chunks = await collect(
+        await generator.generateContentStream(REQUEST, 'p1', LlmRole.MAIN),
+      );
+      expect(chunks.map((c) => c.text ?? '').join('')).toBe(
+        FAILURE_PIECES.join(''),
+      );
+      expect(chunks.flatMap((c) => c.functionCalls ?? [])).toEqual([]);
+    });
+
+    it('emits held text at the end when it is not a known tool call', async () => {
+      const { generator } = setup(
+        streamResponse([ndjson(textChunk('Use <function=x> here'), DONE)]),
+      );
+      const chunks = await collect(
+        await generator.generateContentStream(WITH_TOOLS, 'p1', LlmRole.MAIN),
+      );
+      expect(chunks.map((c) => c.text ?? '').join('')).toBe(
+        'Use <function=x> here',
+      );
+    });
+  });
+
+  it('round trip: a tool call from a response goes back as history', async () => {
+    const { generator } = setup(
+      streamResponse([
+        ndjson(
+          {
+            message: {
+              content: '',
+              tool_calls: [
+                {
+                  id: 'c1',
+                  function: {
+                    name: 'get_weather',
+                    arguments: { city: 'Seoul' },
+                  },
+                },
+              ],
+            },
+            done: false,
+          },
+          DONE,
+        ),
+      ]),
+    );
+    const chunks = await collect(
+      await generator.generateContentStream(REQUEST, 'p1', LlmRole.MAIN),
+    );
+    const modelContent = chunks[0].candidates?.[0].content;
+    const body = generator.buildChatRequest(
+      {
+        model: 'x',
+        contents: [
+          { role: 'user', parts: [{ text: 'weather?' }] },
+          modelContent ?? {},
+          {
+            role: 'user',
+            parts: [
+              {
+                functionResponse: {
+                  id: 'c1',
+                  name: 'get_weather',
+                  response: { output: '{"temp_c":21}' },
+                },
+              },
+            ],
+          },
+        ],
+      },
+      LlmRole.MAIN,
+    );
+    expect(body.messages.slice(1)).toEqual([
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            id: 'c1',
+            function: { name: 'get_weather', arguments: { city: 'Seoul' } },
+          },
+        ],
+      },
+      { role: 'tool', tool_name: 'get_weather', content: '{"temp_c":21}' },
+    ]);
   });
 });
