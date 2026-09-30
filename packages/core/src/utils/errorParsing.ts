@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// (2026-09 폐쇄망 포크) Ollama 429 안내 문구 - 기본 문구(Gemini 모델 전환)는 오해 소지
+
 import { isApiError, isStructuredError } from './quotaErrorDetection.js';
 import { DEFAULT_GEMINI_FLASH_MODEL } from '../config/models.js';
 import type { UserTierId } from '../code_assist/types.js';
@@ -13,6 +15,8 @@ const RATE_LIMIT_ERROR_MESSAGE_USE_GEMINI =
   '\nPlease wait and try again later. To increase your limits, request a quota increase through AI Studio, or switch to another /auth method';
 const RATE_LIMIT_ERROR_MESSAGE_VERTEX =
   '\nPlease wait and try again later. To increase your limits, request a quota increase through Vertex, or switch to another /auth method';
+const RATE_LIMIT_ERROR_MESSAGE_OLLAMA =
+  '\nThe Ollama server is busy. Please wait and try again later.';
 const getRateLimitErrorMessageDefault = (
   fallbackModel: string = DEFAULT_GEMINI_FLASH_MODEL,
 ) =>
@@ -27,6 +31,8 @@ function getRateLimitMessage(
       return RATE_LIMIT_ERROR_MESSAGE_USE_GEMINI;
     case AuthType.USE_VERTEX_AI:
       return RATE_LIMIT_ERROR_MESSAGE_VERTEX;
+    case AuthType.OLLAMA:
+      return RATE_LIMIT_ERROR_MESSAGE_OLLAMA;
     default:
       return getRateLimitErrorMessageDefault(fallbackModel);
   }

@@ -4,7 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AuthType, loadApiKey } from '@google/gemini-cli-core';
+// (2026-09 폐쇄망 포크) AuthType.OLLAMA 검증 추가
+
+import {
+  AuthType,
+  loadApiKey,
+  loadOllamaConfig,
+  getErrorMessage,
+} from '@google/gemini-cli-core';
 import { loadEnvironment, loadSettings } from './settings.js';
 
 export async function validateAuthMethod(
@@ -27,6 +34,18 @@ export async function validateAuthMethod(
       );
     }
     return null;
+  }
+
+  if (authMethod === AuthType.OLLAMA) {
+    try {
+      loadOllamaConfig();
+      return null;
+    } catch (e) {
+      return (
+        `${getErrorMessage(e)}\n` +
+        'Update your environment and try again (no reload needed if using .env)!'
+      );
+    }
   }
 
   if (authMethod === AuthType.USE_VERTEX_AI) {

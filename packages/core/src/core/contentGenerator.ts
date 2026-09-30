@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// (2026-09 폐쇄망 포크) AuthType.OLLAMA 추가 - 환경변수 자동 선택, keytar 조회 생략, OllamaContentGenerator 분기
+
 import {
   GoogleGenAI,
   type CountTokensResponse,
@@ -32,6 +34,8 @@ import { getVersion, resolveModel } from '../../index.js';
 import type { LlmRole } from '../telemetry/llmRole.js';
 import { ModelMappingContentGenerator } from './modelMappingContentGenerator.js';
 import { getBackendModelMappings } from '../config/models.js';
+import { OllamaContentGenerator } from './ollamaContentGenerator.js';
+import { isOllamaConfigured, loadOllamaConfig } from './ollamaConfig.js';
 
 /**
  * Interface abstracting the core functionalities for generating content and counting tokens.
@@ -67,17 +71,22 @@ export enum AuthType {
   LEGACY_CLOUD_SHELL = 'cloud-shell',
   COMPUTE_ADC = 'compute-default-credentials',
   GATEWAY = 'gateway',
+  OLLAMA = 'ollama',
 }
 
 /**
  * Detects the best authentication type based on environment variables.
  *
  * Checks in order:
+ * 0. GEMINI_OLLAMA_BASE_URL -> OLLAMA
  * 1. GOOGLE_GENAI_USE_GCA=true -> LOGIN_WITH_GOOGLE
  * 2. GOOGLE_GENAI_USE_VERTEXAI=true -> USE_VERTEX_AI
  * 3. GEMINI_API_KEY -> USE_GEMINI
  */
 export function getAuthTypeFromEnv(): AuthType | undefined {
+  if (isOllamaConfigured()) {
+    return AuthType.OLLAMA;
+  }
   if (process.env['GOOGLE_GENAI_USE_GCA'] === 'true') {
     return AuthType.LOGIN_WITH_GOOGLE;
   }
@@ -161,12 +170,13 @@ export async function createContentGeneratorConfig(
     return process.env[key];
   };
 
-  // If we are using Google auth or we are in Cloud Shell, there is nothing else to validate for now.
+  // If we are using Google auth, Ollama or we are in Cloud Shell, there is nothing else to validate for now.
   // Return before touching the API-key keychain: on Linux without a Secret Service
   // (WSL/SSH/Docker/CI) keytar can block indefinitely on its functional probe.
   if (
     authType === AuthType.LOGIN_WITH_GOOGLE ||
-    authType === AuthType.COMPUTE_ADC
+    authType === AuthType.COMPUTE_ADC ||
+    authType === AuthType.OLLAMA
   ) {
     return contentGeneratorConfig;
   }
@@ -225,6 +235,12 @@ export async function createContentGenerator(
         gcConfig.fakeResponses,
       );
       return new LoggingContentGenerator(fakeGenerator, gcConfig);
+    }
+    if (config.authType === AuthType.OLLAMA) {
+      return new LoggingContentGenerator(
+        new OllamaContentGenerator(loadOllamaConfig()),
+        gcConfig,
+      );
     }
     const version = await getVersion();
     const model = resolveModel(

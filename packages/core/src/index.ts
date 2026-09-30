@@ -37,6 +37,9 @@ export * from './core/baseLlmClient.js';
 export * from './core/client.js';
 export * from './core/contentGenerator.js';
 export * from './core/fakeContentGenerator.js';
+// (2026-09 폐쇄망 포크) Ollama 연동
+export * from './core/ollamaConfig.js';
+export * from './core/ollamaContentGenerator.js';
 export * from './core/loggingContentGenerator.js';
 export * from './core/geminiChat.js';
 export * from './core/logger.js';

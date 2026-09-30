@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// (2026-09 폐쇄망 포크) selectedType이 비어 있으면 GEMINI_OLLAMA_BASE_URL로 Ollama 자동 선택
+
 import { useState, useEffect, useCallback } from 'react';
 import type { LoadedSettings } from '../../config/settings.js';
 import {
@@ -13,6 +15,7 @@ import {
   debugLogger,
   isAccountSuspendedError,
   ProjectIdRequiredError,
+  isOllamaConfigured,
 } from '@google/gemini-cli-core';
 import { getErrorMessage } from '@google/gemini-cli-core';
 import { AuthState } from '../types.js';
@@ -91,7 +94,9 @@ export const useAuthCommand = (
         return;
       }
 
-      const authType = settings.merged.security.auth.selectedType;
+      const authType =
+        settings.merged.security.auth.selectedType ??
+        (isOllamaConfigured() ? AuthType.OLLAMA : undefined);
       if (!authType) {
         if (process.env['GEMINI_API_KEY']) {
           onAuthError(
