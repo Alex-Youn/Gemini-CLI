@@ -32,7 +32,8 @@ done
 cd "$ROOT"
 CLI_VERSION=$(node -p "require('./package.json').version")
 COMMIT=$(git rev-parse --short HEAD)
-DIRTY=$(git status --porcelain -- packages scripts | grep -q . && echo "-dirty" || true)
+# 추적 중인 파일의 수정만 본다(테스트가 만든 추적 안 된 파일은 번들에 들어가지 않음).
+DIRTY=$(git status --porcelain --untracked-files=no -- packages scripts | grep -q . && echo "-dirty" || true)
 NAME="gemini-cli-ollama-${CLI_VERSION}-${COMMIT}${DIRTY}-linux-x64"
 NODE_DIST="node-${NODE_VERSION}-linux-x64"
 
