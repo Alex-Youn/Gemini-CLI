@@ -14,7 +14,8 @@ export PATH="$(pwd)/bin:$PATH"     # ~/.bashrc에도 추가
 ```
 
 `install.sh`가 하는 일: 체크섬 확인, `runtime/node` 풀기, `config/gemini.env`
-생성, `~/.gemini/settings.json`이 없으면 샘플 복사(있으면 그대로 둠).
+생성, `~/.gemini/settings.json`·`~/.gemini/GEMINI.md`(한국어 응답 지시)가 없으면
+샘플 복사(있으면 그대로 둠).
 
 ## 설정
 

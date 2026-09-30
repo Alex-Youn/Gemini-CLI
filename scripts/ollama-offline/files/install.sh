@@ -37,6 +37,13 @@ else
   cp config/settings.json.sample "$HOME/.gemini/settings.json"
   echo "      $HOME/.gemini/settings.json 생성"
 fi
+# 전역 GEMINI.md: 한국어 응답 지시 (시스템 프롬프트가 영어라 영어 내용을 읽은 뒤 영어로 답하는 경우가 있음)
+if [ -f "$HOME/.gemini/GEMINI.md" ]; then
+  echo "      기존 $HOME/.gemini/GEMINI.md 유지 - 한국어 응답 지시는 config/GEMINI.md.sample 참고"
+else
+  cp config/GEMINI.md.sample "$HOME/.gemini/GEMINI.md"
+  echo "      $HOME/.gemini/GEMINI.md 생성 (한국어 응답 지시)"
+fi
 
 echo "[4/4] 실행 확인"
 echo "      gemini $(bin/gemini --version)"
