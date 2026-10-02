@@ -25,7 +25,7 @@ import {
 } from '@google/genai';
 import * as undici from 'undici';
 import type { ContentGenerator } from './contentGenerator.js';
-import type { OllamaConfig } from './ollamaConfig.js';
+import type { OllamaConfig, OllamaResponseLanguage } from './ollamaConfig.js';
 import { LlmRole } from '../telemetry/llmRole.js';
 import { estimateTokenCountSync } from '../utils/tokenCalculation.js';
 import { debugLogger } from '../utils/debugLogger.js';
@@ -206,14 +206,43 @@ function systemInstructionToText(
     .join('\n');
 }
 
+/**
+ * 답변 언어를 맞추려고 대화 맨 앞에 끼워 넣는 문답 한 쌍.
+ * 시스템 프롬프트가 영어라 GEMINI.md나 덧붙인 지시문만으로는 도구 호출 앞뒤 설명이
+ * 영어(가끔 중국어)로 나온다. 모델은 직전 대화의 언어를 따라가므로 해당 언어로 답한
+ * 기록을 먼저 보여 준다. qwen3-coder:30b 첫 턴 측정: 지시문 9/15, 문답 20/20.
+ */
+const RESPONSE_LANGUAGE_PRIMERS: Record<
+  OllamaResponseLanguage,
+  OllamaMessage[]
+> = {
+  ko: [
+    {
+      role: 'user',
+      content:
+        '앞으로 모든 답변과 도구 호출 전후의 설명을 한국어로 작성해 주세요.',
+    },
+    {
+      role: 'assistant',
+      content:
+        '네, 알겠습니다. 지금부터 도구를 호출하기 전후의 설명을 포함해 모든 답변을 한국어로 작성하겠습니다. 코드, 명령어, 파일 경로, 식별자는 원문 그대로 두겠습니다.',
+    },
+  ],
+};
+
 export function toOllamaMessages(
   contents: ContentListUnion,
   systemInstruction?: ContentUnion,
+  responseLanguage?: OllamaResponseLanguage,
 ): OllamaMessage[] {
   const messages: OllamaMessage[] = [];
   const system = systemInstructionToText(systemInstruction);
   if (system) {
     messages.push({ role: 'system', content: system });
+  }
+  if (responseLanguage) {
+    // 기록(history)에는 넣지 않고 보내는 요청에만 넣는다. 항상 같은 자리라 프롬프트 캐시도 유지된다.
+    messages.push(...RESPONSE_LANGUAGE_PRIMERS[responseLanguage]);
   }
   for (const content of toContents(contents)) {
     const parts = content.parts ?? [];
@@ -607,6 +636,10 @@ export class OllamaContentGenerator implements ContentGenerator {
       messages: toOllamaMessages(
         request.contents,
         request.config?.systemInstruction,
+        // 분류·요약 같은 유틸리티 호출에는 넣지 않는다(JSON 출력 등을 흐트러뜨리지 않게).
+        role === LlmRole.MAIN || role === LlmRole.SUBAGENT
+          ? this.config.responseLanguage
+          : undefined,
       ),
       stream: true,
       options: toOllamaOptions(request.config, this.config.numCtx),

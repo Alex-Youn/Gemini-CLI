@@ -12,9 +12,11 @@ const getPackageJson = vi.hoisted(() => vi.fn());
 const debugLogger = vi.hoisted(() => ({
   warn: vi.fn(),
 }));
+const isOllamaConfigured = vi.hoisted(() => vi.fn());
 vi.mock('@google/gemini-cli-core', () => ({
   getPackageJson,
   debugLogger,
+  isOllamaConfigured,
   ReleaseChannel: {
     NIGHTLY: 'nightly',
     PREVIEW: 'preview',
@@ -66,6 +68,19 @@ describe('checkForUpdates', () => {
 
   it('should return null if enableAutoUpdateNotification is false', async () => {
     mockSettings.merged.general.enableAutoUpdateNotification = false;
+    const result = await checkForUpdates(mockSettings);
+    expect(result).toBeNull();
+    expect(getPackageJson).not.toHaveBeenCalled();
+    expect(latestVersion).not.toHaveBeenCalled();
+  });
+
+  it('should return null in Ollama mode', async () => {
+    isOllamaConfigured.mockReturnValue(true);
+    getPackageJson.mockResolvedValue({
+      name: 'test-package',
+      version: '1.0.0',
+    });
+    latestVersion.mockResolvedValue('1.1.0');
     const result = await checkForUpdates(mockSettings);
     expect(result).toBeNull();
     expect(getPackageJson).not.toHaveBeenCalled();

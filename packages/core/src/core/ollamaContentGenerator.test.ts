@@ -817,6 +817,20 @@ describe('tool calling (2단계)', () => {
   });
 
   describe('history conversion', () => {
+    it('inserts the response language primer right after the system message', () => {
+      const contents = [{ role: 'user', parts: [{ text: '계산기 만들어줘' }] }];
+      const messages = toOllamaMessages(contents, 'system prompt', 'ko');
+      expect(messages.map((m) => m.role)).toEqual([
+        'system',
+        'user',
+        'assistant',
+        'user',
+      ]);
+      expect(messages[2].content).toContain('한국어');
+      expect(messages[3].content).toBe('계산기 만들어줘');
+      expect(toOllamaMessages(contents, 'system prompt')).toHaveLength(2);
+    });
+
     it('maps parallel function calls and their responses in order', () => {
       const messages = toOllamaMessages([
         { role: 'user', parts: [{ text: 'weather in Seoul and Busan?' }] },

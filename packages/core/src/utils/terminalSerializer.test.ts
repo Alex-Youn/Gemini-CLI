@@ -23,6 +23,18 @@ function writeToTerminal(terminal: Terminal, data: string): Promise<void> {
 
 describe('terminalSerializer', () => {
   describe('serializeTerminalToObject', () => {
+    it('should not insert spaces after wide characters', async () => {
+      const terminal = new Terminal({
+        cols: 80,
+        rows: 24,
+        allowProposedApi: true,
+      });
+      await writeToTerminal(terminal, '매개 변수 ok');
+      const result = serializeTerminalToObject(terminal);
+      const text = result[0].map((token) => token.text).join('');
+      expect(text.trimEnd()).toBe('매개 변수 ok');
+    });
+
     it('should handle an empty terminal', () => {
       const terminal = new Terminal({
         cols: 80,

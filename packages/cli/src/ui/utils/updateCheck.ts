@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// (2026-10 폐쇄망 포크) Ollama 모드에서는 업데이트 확인을 건너뛴다
+
 import latestVersion from 'latest-version';
 import semver from 'semver';
 import {
@@ -11,6 +13,7 @@ import {
   debugLogger,
   getChannelFromVersion,
   RELEASE_CHANNEL_STABILITY,
+  isOllamaConfigured,
 } from '@google/gemini-cli-core';
 import type { LoadedSettings } from '../../config/settings.js';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +61,11 @@ export async function checkForUpdates(
 ): Promise<UpdateObject | null> {
   try {
     if (!settings.merged.general.enableAutoUpdateNotification) {
+      return null;
+    }
+    // 포크 번들은 원본(@google/gemini-cli)으로 업데이트하면 안 된다.
+    // 확인을 켜 두면 실행할 때마다 npm install -g 창이 뜨고 전역 원본이 다시 설치된다.
+    if (isOllamaConfigured()) {
       return null;
     }
     // Skip update check when running from source (development mode)

@@ -186,6 +186,11 @@ export function serializeTerminalToObject(
 
     for (let x = 0; x < terminal.cols; x++) {
       const cellData = line.getCell(x, cellBuffer);
+      // (2026-10 폐쇄망 포크) 한글 등 2칸 문자의 둘째 칸(폭 0)은 건너뛴다.
+      // 그대로 두면 빈 칸이 공백으로 들어가 "매 개 변 수"처럼 글자가 벌어진다.
+      if (cellData?.getWidth() === 0) {
+        continue;
+      }
       currentCell.update(cellData || null, x, y, cursorX, absoluteCursorY);
 
       if (x > 0 && !currentCell.equals(lastCell)) {

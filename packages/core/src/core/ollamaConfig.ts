@@ -14,6 +14,7 @@ export const OLLAMA_ENV = {
   EMBED_MODEL: 'GEMINI_OLLAMA_EMBED_MODEL',
   KEEP_ALIVE: 'GEMINI_OLLAMA_KEEP_ALIVE',
   TIMEOUT_SECONDS: 'GEMINI_OLLAMA_TIMEOUT_SECONDS',
+  RESPONSE_LANGUAGE: 'GEMINI_OLLAMA_RESPONSE_LANGUAGE',
 } as const;
 
 export const DEFAULT_OLLAMA_NUM_CTX = 32768;
@@ -31,6 +32,25 @@ export interface OllamaConfig {
   embedModel?: string;
   keepAlive?: string;
   timeoutMs: number;
+  /** 답변 언어. 지정하면 대화 요청 맨 앞에 그 언어의 문답을 끼워 넣는다. */
+  responseLanguage?: OllamaResponseLanguage;
+}
+
+export const OLLAMA_RESPONSE_LANGUAGES = ['ko'] as const;
+export type OllamaResponseLanguage = (typeof OLLAMA_RESPONSE_LANGUAGES)[number];
+
+function readResponseLanguage(env: Env): OllamaResponseLanguage | undefined {
+  const raw = readEnv(env, OLLAMA_ENV.RESPONSE_LANGUAGE);
+  if (raw === undefined) {
+    return undefined;
+  }
+  const value = OLLAMA_RESPONSE_LANGUAGES.find((l) => l === raw.toLowerCase());
+  if (!value) {
+    throw new Error(
+      `${OLLAMA_ENV.RESPONSE_LANGUAGE} 값이 올바르지 않습니다: "${raw}" (지원: ${OLLAMA_RESPONSE_LANGUAGES.join(', ')})`,
+    );
+  }
+  return value;
 }
 
 function readEnv(env: Env, name: string): string | undefined {
@@ -88,6 +108,7 @@ export function loadOllamaConfig(env: Env = process.env): OllamaConfig {
         OLLAMA_ENV.TIMEOUT_SECONDS,
         DEFAULT_OLLAMA_TIMEOUT_SECONDS,
       ) * 1000,
+    responseLanguage: readResponseLanguage(env),
   };
 }
 

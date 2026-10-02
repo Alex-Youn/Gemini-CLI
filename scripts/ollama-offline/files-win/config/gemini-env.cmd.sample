@@ -1,0 +1,24 @@
+@echo off
+rem (2026-10 closed-network fork) gemini-cli-ollama environment - read by bin\gemini.cmd on every run.
+rem A value already set in the shell wins (the lines below are defaults).
+rem Keep this file ASCII-only. Korean description: README.md
+
+rem Ollama entry point: the REST API relay on the GPU server (SqltuneRestApi, port 9300, /ollama).
+rem CHANGE 127.0.0.1 to the GPU server address.
+if not defined GEMINI_OLLAMA_BASE_URL set "GEMINI_OLLAMA_BASE_URL=http://127.0.0.1:9300/ollama"
+
+rem Chat model (must exist on the server: ollama list)
+if not defined GEMINI_OLLAMA_MODEL set "GEMINI_OLLAMA_MODEL=qwen3-coder:30b"
+
+rem Model name shown in the footer. "auto" adds a router call on every turn and is slower.
+if not defined GEMINI_MODEL set "GEMINI_MODEL=%GEMINI_OLLAMA_MODEL%"
+
+rem Context length. Same value as the SQL tuning REST API (a different value reloads the model).
+if not defined GEMINI_OLLAMA_NUM_CTX set "GEMINI_OLLAMA_NUM_CTX=32768"
+
+rem Response language. Makes the short notes around tool calls Korean too. Supported: ko
+if not defined GEMINI_OLLAMA_RESPONSE_LANGUAGE set "GEMINI_OLLAMA_RESPONSE_LANGUAGE=ko"
+
+rem Optional
+rem if not defined GEMINI_OLLAMA_KEEP_ALIVE set "GEMINI_OLLAMA_KEEP_ALIVE=30m"
+rem if not defined GEMINI_OLLAMA_TIMEOUT_SECONDS set "GEMINI_OLLAMA_TIMEOUT_SECONDS=600"

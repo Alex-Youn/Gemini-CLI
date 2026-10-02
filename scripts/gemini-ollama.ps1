@@ -24,8 +24,11 @@ function Set-DefaultEnv([string]$Name, [string]$Value) {
   }
 }
 
-# Ollama 주소. 개발 PC는 localhost:11434에 리스너가 여럿이라 127.0.0.1로 고정한다(Windows Ollama).
-Set-DefaultEnv 'GEMINI_OLLAMA_BASE_URL' 'http://127.0.0.1:11434'
+# Ollama 주소. REST API(SqltuneRestApi, Docker rockylinux9의 9300)의 /ollama 중계를 거쳐 컨테이너 Ollama로 간다.
+# 폐쇄망과 같은 구성이다(GPU 서버는 9300만 열림). 컨테이너에서 Ollama와 REST API가 떠 있어야 한다.
+# Windows Ollama로 바로 붙으려면: $env:GEMINI_OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
+# (localhost:11434는 리스너가 여럿이라 쓰지 않는다)
+Set-DefaultEnv 'GEMINI_OLLAMA_BASE_URL' 'http://127.0.0.1:9300/ollama'
 
 # 대화용 모델 (ollama list로 확인)
 Set-DefaultEnv 'GEMINI_OLLAMA_MODEL' 'qwen3-coder:30b'
@@ -35,6 +38,9 @@ Set-DefaultEnv 'GEMINI_MODEL' $env:GEMINI_OLLAMA_MODEL
 
 # 컨텍스트 길이. SQL 튜닝 REST API와 같은 값으로 맞춘다(다르면 모델을 다시 적재함).
 Set-DefaultEnv 'GEMINI_OLLAMA_NUM_CTX' '32768'
+
+# 답변 언어. 도구 호출 앞뒤 설명까지 한국어로 나오게 한다(GEMINI.md 지시만으로는 영어가 섞임). 지원 값: ko
+Set-DefaultEnv 'GEMINI_OLLAMA_RESPONSE_LANGUAGE' 'ko'
 
 # 선택 항목 (쓰려면 주석을 푼다)
 # Set-DefaultEnv 'GEMINI_OLLAMA_FAST_MODEL' 'qwen3-coder:30b'   # 압축·요약 등 유틸리티 호출용 (GPU 1장이면 비워 두기)
