@@ -631,18 +631,22 @@ export class OllamaContentGenerator implements ContentGenerator {
     request: GenerateContentParameters,
     role: LlmRole,
   ): OllamaChatRequest {
+    // 답변 언어·temperature 설정은 대화 요청에만 적용한다.
+    // 분류·요약 같은 유틸리티 호출은 건드리지 않는다(JSON 출력 등을 흐트러뜨리지 않게).
+    const isChat = role === LlmRole.MAIN || role === LlmRole.SUBAGENT;
+    const options = toOllamaOptions(request.config, this.config.numCtx);
+    if (isChat && this.config.temperature !== undefined) {
+      options['temperature'] = this.config.temperature;
+    }
     const body: OllamaChatRequest = {
       model: this.selectModel(role),
       messages: toOllamaMessages(
         request.contents,
         request.config?.systemInstruction,
-        // 분류·요약 같은 유틸리티 호출에는 넣지 않는다(JSON 출력 등을 흐트러뜨리지 않게).
-        role === LlmRole.MAIN || role === LlmRole.SUBAGENT
-          ? this.config.responseLanguage
-          : undefined,
+        isChat ? this.config.responseLanguage : undefined,
       ),
       stream: true,
-      options: toOllamaOptions(request.config, this.config.numCtx),
+      options,
     };
     const tools = toOllamaTools(request.config);
     if (tools) {

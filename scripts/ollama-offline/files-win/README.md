@@ -37,6 +37,7 @@ certutil -hashfile gemini-cli-ollama-*-win-x64.zip SHA256
 | `GEMINI_OLLAMA_MODEL`             | `qwen3-coder:30b`              | 서버에 있는 모델 이름                 |
 | `GEMINI_OLLAMA_NUM_CTX`           | `32768`                        | SQL 튜닝 REST API와 같은 값           |
 | `GEMINI_OLLAMA_RESPONSE_LANGUAGE` | `ko`                           | 도구 호출 앞뒤 설명까지 한국어로 나옴 |
+| `GEMINI_OLLAMA_TEMPERATURE`       | `0.3`                          | 높이면 답변이 가끔 중국어로 나옴      |
 
 셸에 이미 설정된 환경변수가 있으면 그 값이 우선합니다.
 

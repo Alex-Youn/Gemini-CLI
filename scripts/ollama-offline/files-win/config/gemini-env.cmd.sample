@@ -19,6 +19,9 @@ if not defined GEMINI_OLLAMA_NUM_CTX set "GEMINI_OLLAMA_NUM_CTX=32768"
 rem Response language. Makes the short notes around tool calls Korean too. Supported: ko
 if not defined GEMINI_OLLAMA_RESPONSE_LANGUAGE set "GEMINI_OLLAMA_RESPONSE_LANGUAGE=ko"
 
+rem Temperature for chat requests. At the CLI default (1) answers sometimes come out in Chinese or Japanese.
+if not defined GEMINI_OLLAMA_TEMPERATURE set "GEMINI_OLLAMA_TEMPERATURE=0.3"
+
 rem Optional
 rem if not defined GEMINI_OLLAMA_KEEP_ALIVE set "GEMINI_OLLAMA_KEEP_ALIVE=30m"
 rem if not defined GEMINI_OLLAMA_TIMEOUT_SECONDS set "GEMINI_OLLAMA_TIMEOUT_SECONDS=600"

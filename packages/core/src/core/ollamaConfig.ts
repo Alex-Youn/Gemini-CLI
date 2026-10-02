@@ -15,6 +15,7 @@ export const OLLAMA_ENV = {
   KEEP_ALIVE: 'GEMINI_OLLAMA_KEEP_ALIVE',
   TIMEOUT_SECONDS: 'GEMINI_OLLAMA_TIMEOUT_SECONDS',
   RESPONSE_LANGUAGE: 'GEMINI_OLLAMA_RESPONSE_LANGUAGE',
+  TEMPERATURE: 'GEMINI_OLLAMA_TEMPERATURE',
 } as const;
 
 export const DEFAULT_OLLAMA_NUM_CTX = 32768;
@@ -34,6 +35,12 @@ export interface OllamaConfig {
   timeoutMs: number;
   /** 답변 언어. 지정하면 대화 요청 맨 앞에 그 언어의 문답을 끼워 넣는다. */
   responseLanguage?: OllamaResponseLanguage;
+  /**
+   * 대화 요청의 temperature. 지정하지 않으면 CLI 기본값(1)이 그대로 간다.
+   * qwen3-coder:30b는 1에서 답변이 가끔 중국어·일본어로 나온다(한국어 문답을 넣어도 14/20).
+   * 0.3으로 낮추면 55/55 한국어 - 작업정리/개발PC_자동업데이트_한국어응답_표시버그_2026-10-02.md
+   */
+  temperature?: number;
 }
 
 export const OLLAMA_RESPONSE_LANGUAGES = ['ko'] as const;
@@ -48,6 +55,20 @@ function readResponseLanguage(env: Env): OllamaResponseLanguage | undefined {
   if (!value) {
     throw new Error(
       `${OLLAMA_ENV.RESPONSE_LANGUAGE} 값이 올바르지 않습니다: "${raw}" (지원: ${OLLAMA_RESPONSE_LANGUAGES.join(', ')})`,
+    );
+  }
+  return value;
+}
+
+function readTemperature(env: Env): number | undefined {
+  const raw = readEnv(env, OLLAMA_ENV.TEMPERATURE);
+  if (raw === undefined) {
+    return undefined;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 2) {
+    throw new Error(
+      `${OLLAMA_ENV.TEMPERATURE} 값이 올바르지 않습니다: "${raw}" (0~2)`,
     );
   }
   return value;
@@ -109,6 +130,7 @@ export function loadOllamaConfig(env: Env = process.env): OllamaConfig {
         DEFAULT_OLLAMA_TIMEOUT_SECONDS,
       ) * 1000,
     responseLanguage: readResponseLanguage(env),
+    temperature: readTemperature(env),
   };
 }
 

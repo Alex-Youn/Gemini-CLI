@@ -4,6 +4,7 @@
     "enableAutoUpdate": false,
     "enableAutoUpdateNotification": false
   },
+  "ide": { "hasSeenNudge": true },
   "privacy": { "usageStatisticsEnabled": false },
   "model": { "compressionThreshold": 0.7 },
   "tools": {

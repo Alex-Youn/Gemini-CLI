@@ -250,6 +250,27 @@ describe('OllamaContentGenerator', () => {
       });
     });
 
+    it('overrides temperature for chat roles only when configured', () => {
+      const g = new OllamaContentGenerator(
+        { ...CONFIG, temperature: 0.3 },
+        vi.fn(),
+      );
+      const request = { ...REQUEST, config: { temperature: 1 } };
+      expect(
+        g.buildChatRequest(request, LlmRole.MAIN).options['temperature'],
+      ).toBe(0.3);
+      expect(
+        g.buildChatRequest(request, LlmRole.UTILITY_COMPRESSOR).options[
+          'temperature'
+        ],
+      ).toBe(1);
+      expect(
+        generator.buildChatRequest(request, LlmRole.MAIN).options[
+          'temperature'
+        ],
+      ).toBe(1);
+    });
+
     it('sends keep_alive when configured', () => {
       const g = new OllamaContentGenerator(
         { ...CONFIG, keepAlive: '30m' },

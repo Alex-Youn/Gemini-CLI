@@ -42,6 +42,9 @@ Set-DefaultEnv 'GEMINI_OLLAMA_NUM_CTX' '32768'
 # 답변 언어. 도구 호출 앞뒤 설명까지 한국어로 나오게 한다(GEMINI.md 지시만으로는 영어가 섞임). 지원 값: ko
 Set-DefaultEnv 'GEMINI_OLLAMA_RESPONSE_LANGUAGE' 'ko'
 
+# 대화 요청의 temperature. CLI 기본값(1)에서는 답변이 가끔 중국어·일본어로 나온다.
+Set-DefaultEnv 'GEMINI_OLLAMA_TEMPERATURE' '0.3'
+
 # 선택 항목 (쓰려면 주석을 푼다)
 # Set-DefaultEnv 'GEMINI_OLLAMA_FAST_MODEL' 'qwen3-coder:30b'   # 압축·요약 등 유틸리티 호출용 (GPU 1장이면 비워 두기)
 # Set-DefaultEnv 'GEMINI_OLLAMA_EMBED_MODEL' 'bge-m3'           # 임베딩용 모델
